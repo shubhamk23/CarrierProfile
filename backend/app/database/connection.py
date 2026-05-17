@@ -12,22 +12,36 @@ if database_url and database_url.startswith("postgresql://"):
 engine = None
 async_session_maker = None
 
-if database_url:
-    engine = create_async_engine(
-        database_url,
-        echo=settings.debug,
-        pool_size=settings.database_pool_size,
-        max_overflow=settings.database_max_overflow,
-        pool_recycle=settings.database_pool_recycle,
-        pool_pre_ping=settings.database_pool_pre_ping,
-        # Important for serverless: don't maintain persistent connections
-        pool_timeout=30,
-        connect_args={
-            "server_settings": {"application_name": "carrier_profile_api"},
-        }
-    )
 
-    # Create async session factory
+def _is_sqlite(url: str) -> bool:
+    return url.startswith("sqlite")
+
+
+if database_url:
+    if _is_sqlite(database_url):
+        # SQLite (in-memory and on-disk) — minimal config, no Postgres pool args.
+        engine = create_async_engine(
+            database_url,
+            echo=settings.debug,
+            connect_args={"check_same_thread": False},
+        )
+    else:
+        engine = create_async_engine(
+            database_url,
+            echo=settings.debug,
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_max_overflow,
+            pool_recycle=settings.database_pool_recycle,
+            pool_pre_ping=settings.database_pool_pre_ping,
+            # Important for serverless: don't maintain persistent connections
+            pool_timeout=30,
+            connect_args={
+                "server_settings": {
+                    "application_name": "carrier_profile_api"
+                },
+            },
+        )
+
     async_session_maker = async_sessionmaker(
         engine,
         class_=AsyncSession,

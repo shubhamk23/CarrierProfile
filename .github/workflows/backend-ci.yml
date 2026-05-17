@@ -19,6 +19,29 @@ jobs:
       run:
         working-directory: backend
 
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: knowledge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: sqlite+aiosqlite:///:memory:
+      KNOWLEDGE_JWT_SECRET_KEY: ci-secret
+      KNOWLEDGE_ADMIN_USERNAME: admin
+      KNOWLEDGE_ADMIN_PASSWORD: ci-password
+      KNOWLEDGE_INDEX_ON_BOOT: 'False'
+      KNOWLEDGE_ENABLE_WATCHER: 'False'
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/knowledge
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,33 +49,58 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install flake8 black pytest pytest-asyncio
+          pip install flake8 black
 
-      - name: Run Flake8 (syntax errors and undefined names)
-        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        continue-on-error: true
-
-      - name: Run Flake8 (all warnings)
-        run: flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-        continue-on-error: true
-
-      - name: Check code formatting with Black
-        run: black --check .
-        continue-on-error: true
-
-      - name: Run tests (if any)
+      - name: Wait for Postgres
         run: |
-          if [ -d "tests" ]; then
-            pytest tests/ -v
-          else
-            echo "No tests directory found, skipping tests"
-          fi
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            pg_isready -h localhost -p 5432 -U postgres && break
+            echo "Waiting for postgres..."; sleep 2
+          done
+
+      - name: Run Alembic migrations against test DB
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/knowledge
+        run: alembic upgrade head
+
+      - name: Test alembic round-trip (upgrade then downgrade then upgrade)
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/knowledge
+        run: |
+          alembic downgrade base
+          alembic upgrade head
+
+      - name: Lint (Flake8 — syntax errors only, block on these)
+        run: flake8 app --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: Lint (Flake8 — style warnings, non-blocking)
+        run: flake8 app --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Check formatting (Black, non-blocking)
+        run: black --check app
         continue-on-error: true
+
+      - name: Run unit + integration tests
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///:memory:
+        run: |
+          pytest tests/unit tests/integration -v \
+            --cov=app/knowledge \
+            --cov=app/database \
+            --cov-report=term-missing \
+            --cov-report=xml
+
+      - name: Upload coverage to artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml

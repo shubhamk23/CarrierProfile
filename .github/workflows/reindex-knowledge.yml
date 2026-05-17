@@ -1,0 +1,43 @@
+name: Reindex Knowledge Hub
+
+# Triggered on push to main that changes any markdown content under
+# backend/app/content/. Fires a single POST against the production admin
+# reindex endpoint so the new note shows up without waiting for a cold-start
+# bootstrap pass.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/app/content/**'
+  workflow_dispatch:
+
+jobs:
+  reindex:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Acquire admin token
+        id: token
+        env:
+          ADMIN_USERNAME: ${{ secrets.KNOWLEDGE_ADMIN_USERNAME }}
+          ADMIN_PASSWORD: ${{ secrets.KNOWLEDGE_ADMIN_PASSWORD }}
+          API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+        run: |
+          TOKEN=$(curl -fsS -X POST "$API_URL/api/knowledge/auth/token" \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"$ADMIN_USERNAME\",\"password\":\"$ADMIN_PASSWORD\"}" \
+            | jq -r .access_token)
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "::error::Failed to acquire admin token"; exit 1
+          fi
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger reindex
+        env:
+          API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          curl -fsS -X POST "$API_URL/api/knowledge/admin/reindex" \
+            -H "Authorization: Bearer $TOKEN" \
+            | jq .

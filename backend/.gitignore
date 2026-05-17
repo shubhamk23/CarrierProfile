@@ -52,3 +52,4 @@ app/data/messages.json
 
 # Misc
 .DS_Store
+.vercel

@@ -13,7 +13,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Import settings and models
 from app.config import settings
 from app.database.connection import Base
-from app.database.models import ContactMessage  # Import all models here
+from app.database.models import ContactMessage  # noqa: F401  (registers model)
+from app.knowledge.models import AdminUser, Note, Section  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

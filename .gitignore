@@ -66,3 +66,4 @@ alembic/versions/__pycache__/
 # Temporary files
 *.tmp
 *.temp
+info.txt

@@ -5,12 +5,12 @@ import { Menu, X } from 'lucide-react'
 import ThemeToggle from './ThemeToggle'
 
 const navItems = [
-  { name: 'About', href: '#about' },
-  { name: 'Experience', href: '#experience' },
-  { name: 'Skills', href: '#skills' },
-  { name: 'Projects', href: '#projects' },
-  { name: 'Achievements', href: '#achievements' },
-  { name: 'Contact', href: '#contact' },
+  { name: 'About', href: '/#about' },
+  { name: 'Experience', href: '/#experience' },
+  { name: 'Skills', href: '/#skills' },
+  { name: 'Projects', href: '/#projects' },
+  { name: 'Knowledge', href: '/knowledge' },
+  { name: 'Contact', href: '/#contact' },
 ]
 
 export default function Navigation() {
