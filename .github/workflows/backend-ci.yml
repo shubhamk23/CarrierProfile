@@ -34,7 +34,7 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: sqlite+aiosqlite:///:memory:
+      DATABASE_URL: "sqlite+aiosqlite:///:memory:"
       KNOWLEDGE_JWT_SECRET_KEY: ci-secret
       KNOWLEDGE_ADMIN_USERNAME: admin
       KNOWLEDGE_ADMIN_PASSWORD: ci-password
@@ -90,7 +90,7 @@ jobs:
 
       - name: Run unit + integration tests
         env:
-          DATABASE_URL: sqlite+aiosqlite:///:memory:
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"
         run: |
           pytest tests/unit tests/integration -v \
             --cov=app/knowledge \
