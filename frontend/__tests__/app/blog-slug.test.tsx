@@ -61,9 +61,11 @@ describe('BlogPostPage — valid slug', () => {
 
   it('renders the post title', () => {
     render(<BlogPostPage />)
+    // The markdown body repeats the title as its own heading, so more than
+    // one element can legitimately match — assert it renders at all.
     expect(
-      screen.getByText(/Building Production-Grade RAG Systems/i),
-    ).toBeInTheDocument()
+      screen.getAllByText(/Building Production-Grade RAG Systems/i).length,
+    ).toBeGreaterThan(0)
   })
 
   it('renders the category badge', () => {

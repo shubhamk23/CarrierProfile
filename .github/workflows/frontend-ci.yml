@@ -44,7 +44,6 @@ jobs:
 
       - name: Run tests
         run: npm test -- --watchAll=false --passWithNoTests
-        continue-on-error: true
 
       - name: Build application
         run: npm run build

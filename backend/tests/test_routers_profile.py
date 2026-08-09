@@ -3,22 +3,8 @@
 All tests mock the filesystem open() call so they never depend on the real
 profile.json file being present or having a specific shape.
 """
-import io
-import json
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from fastapi.testclient import TestClient
-
-
-def make_client(profile_data: dict):
-    """Return a TestClient whose open() is mocked to return profile_data."""
-    from app.main import app
-
-    profile_json = json.dumps(profile_data)
-
-    with patch("builtins.open", return_value=io.StringIO(profile_json)):
-        with TestClient(app, raise_server_exceptions=True) as c:
-            yield c
 
 
 class TestGetProfile:

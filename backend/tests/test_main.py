@@ -43,7 +43,10 @@ class TestCORSHeaders:
         """Preflight OPTIONS request should not return 405."""
         response = client.options(
             "/api/health",
-            headers={"Origin": "http://localhost:3000"},
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "GET",
+            },
         )
         # FastAPI/Starlette returns 200 for preflight when CORS is configured
         assert response.status_code in (200, 204)
