@@ -34,7 +34,8 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install flake8 black pytest pytest-asyncio
+          pip install -r requirements-dev.txt
+          pip install flake8 black
 
       - name: Run Flake8 (syntax errors and undefined names)
         run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
@@ -55,4 +56,3 @@ jobs:
           else
             echo "No tests directory found, skipping tests"
           fi
-        continue-on-error: true

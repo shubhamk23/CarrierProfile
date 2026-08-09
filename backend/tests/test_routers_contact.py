@@ -77,12 +77,13 @@ class TestSubmitContactFormDBPath:
 
         app.dependency_overrides[get_db] = override_get_db
 
-        with patch("builtins.open", return_value=_io.StringIO(profile_json)):
-            with patch("app.routers.contact.send_email_notification", new=AsyncMock()):
-                with TestClient(app, raise_server_exceptions=True) as c:
-                    response = c.post("/api/contact", json=VALID_PAYLOAD)
-
-        app.dependency_overrides.clear()
+        try:
+            with patch("builtins.open", return_value=_io.StringIO(profile_json)):
+                with patch("app.routers.contact.send_email_notification", new=AsyncMock()):
+                    with TestClient(app, raise_server_exceptions=True) as c:
+                        response = c.post("/api/contact", json=VALID_PAYLOAD)
+        finally:
+            app.dependency_overrides.clear()
 
         assert response.status_code == 200
         body = response.json()
@@ -101,12 +102,13 @@ class TestSubmitContactFormDBPath:
         app.dependency_overrides[get_db] = override_get_db
 
         profile_json = json.dumps(_profile_data())
-        with patch("builtins.open", return_value=_io.StringIO(profile_json)):
-            with patch("app.routers.contact.send_email_notification", new=AsyncMock()):
-                with TestClient(app, raise_server_exceptions=True) as c:
-                    body = c.post("/api/contact", json=VALID_PAYLOAD).json()
-
-        app.dependency_overrides.clear()
+        try:
+            with patch("builtins.open", return_value=_io.StringIO(profile_json)):
+                with patch("app.routers.contact.send_email_notification", new=AsyncMock()):
+                    with TestClient(app, raise_server_exceptions=True) as c:
+                        body = c.post("/api/contact", json=VALID_PAYLOAD).json()
+        finally:
+            app.dependency_overrides.clear()
         assert len(body.get("message", "")) > 0
 
 
@@ -124,9 +126,9 @@ class TestSubmitContactFormFallback:
 
         app.dependency_overrides[get_db] = override_get_db
 
-        profile_json = json.dumps(_profile_data())
-        # Mock the file-write path so we don't touch the real filesystem
-        with patch("builtins.open", side_effect=_open_side_effect(profile_json)):
+        try:
+            # /api/contact never reads profile.json, so only the file-write
+            # path (save_message_to_file) needs mocking here.
             with patch("app.routers.contact.send_email_notification", new=AsyncMock()):
                 with patch("app.routers.contact.MESSAGES_PATH") as mock_path:
                     mock_path.exists.return_value = False
@@ -134,8 +136,8 @@ class TestSubmitContactFormFallback:
                     with patch("builtins.open", mock_open(read_data="[]")):
                         with TestClient(app, raise_server_exceptions=True) as c:
                             response = c.post("/api/contact", json=VALID_PAYLOAD)
-
-        app.dependency_overrides.clear()
+        finally:
+            app.dependency_overrides.clear()
         assert response.status_code == 200
 
 
@@ -157,12 +159,13 @@ class TestEmailFailureNonBlocking:
         async def failing_email(_):
             raise Exception("SMTP timeout")
 
-        with patch("builtins.open", return_value=_io.StringIO(profile_json)):
-            with patch("app.routers.contact.send_email_notification", new=failing_email):
-                with TestClient(app, raise_server_exceptions=True) as c:
-                    response = c.post("/api/contact", json=VALID_PAYLOAD)
-
-        app.dependency_overrides.clear()
+        try:
+            with patch("builtins.open", return_value=_io.StringIO(profile_json)):
+                with patch("app.routers.contact.send_email_notification", new=failing_email):
+                    with TestClient(app, raise_server_exceptions=True) as c:
+                        response = c.post("/api/contact", json=VALID_PAYLOAD)
+        finally:
+            app.dependency_overrides.clear()
         assert response.status_code == 200
 
 
@@ -184,11 +187,12 @@ class TestGetMessages:
         app.dependency_overrides[get_db] = override_get_db
 
         profile_json = json.dumps(_profile_data())
-        with patch("builtins.open", return_value=_io.StringIO(profile_json)):
-            with TestClient(app, raise_server_exceptions=True) as c:
-                response = c.get("/api/contact/messages")
-
-        app.dependency_overrides.clear()
+        try:
+            with patch("builtins.open", return_value=_io.StringIO(profile_json)):
+                with TestClient(app, raise_server_exceptions=True) as c:
+                    response = c.get("/api/contact/messages")
+        finally:
+            app.dependency_overrides.clear()
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
@@ -208,11 +212,12 @@ class TestGetMessages:
         app.dependency_overrides[get_db] = override_get_db
 
         profile_json = json.dumps(_profile_data())
-        with patch("builtins.open", return_value=_io.StringIO(profile_json)):
-            with TestClient(app, raise_server_exceptions=True) as c:
-                body = c.get("/api/contact/messages").json()
-
-        app.dependency_overrides.clear()
+        try:
+            with patch("builtins.open", return_value=_io.StringIO(profile_json)):
+                with TestClient(app, raise_server_exceptions=True) as c:
+                    body = c.get("/api/contact/messages").json()
+        finally:
+            app.dependency_overrides.clear()
         assert body == []
 
 
@@ -252,24 +257,3 @@ def _profile_data():
         "certifications": [],
         "awards": [],
     }
-
-
-def _open_side_effect(profile_json: str):
-    """Return a side_effect callable that yields a StringIO for the profile
-    JSON and a mock for any other path (e.g. messages.json writes)."""
-    import io as _io
-
-    call_count = {"n": 0}
-
-    def _side_effect(*args, **kwargs):
-        if call_count["n"] == 0:
-            call_count["n"] += 1
-            return _io.StringIO(profile_json)
-        # subsequent open() calls (messages.json) get a writable mock
-        m = MagicMock()
-        m.__enter__ = lambda s: s
-        m.__exit__ = MagicMock(return_value=False)
-        m.read = MagicMock(return_value="[]")
-        return m
-
-    return _side_effect

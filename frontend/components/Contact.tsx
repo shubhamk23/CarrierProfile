@@ -147,7 +147,7 @@ export default function Contact() {
           animate={isInView ? { opacity: 1, x: 0 } : {}}
           transition={{ duration: 0.5, delay: 0.2 }}
         >
-          <form onSubmit={handleSubmit(onSubmit)} className="card">
+          <form onSubmit={handleSubmit(onSubmit)} className="card" noValidate>
             <div className="space-y-4">
               <div>
                 <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
