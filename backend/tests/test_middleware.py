@@ -3,6 +3,8 @@
 get_client_identifier() is a pure function that reads request headers, so
 we can test it without starting the full FastAPI app.
 """
+from __future__ import annotations
+
 import pytest
 from unittest.mock import MagicMock
 
