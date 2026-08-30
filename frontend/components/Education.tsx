@@ -37,7 +37,7 @@ export default function Education() {
                 Bachelor of Engineering in Computer Science
               </h3>
               <p className="text-primary-600 dark:text-primary-400 font-medium mb-4">
-                Vidya Pratishthan's Kamalnayan Bajaj Institute of Engineering & Technology
+                Vidya Pratishthan&apos;s Kamalnayan Bajaj Institute of Engineering & Technology
               </p>
               <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
                 <span className="flex items-center gap-1">

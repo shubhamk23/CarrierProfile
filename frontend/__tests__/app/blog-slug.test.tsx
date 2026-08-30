@@ -1,28 +1,18 @@
 /**
- * Tests for app/blog/[slug]/page.tsx (BlogPostPage)
- *
- * Behaviours tested:
- * - Valid slug renders the post title, category, read time, and formatted date
- * - Invalid slug renders the "Post Not Found" message
- * - Markdown headings (#, ##, ###) are converted to h1/h2/h3 elements
- * - Bullet list items (- …) are converted to <li> elements
- * - Numbered list items (1. …) are converted to <li> elements
+ * Tests for app/blog/[slug]/page.tsx (BlogPostPage), its generateMetadata /
+ * generateStaticParams exports, and the not-found.tsx fallback.
  */
 
 import React from 'react'
 import { render, screen } from '@testing-library/react'
 
-// ------------------------------------------------------------------
-// Module mocks
-// ------------------------------------------------------------------
-
-// next/navigation — let each test control the returned slug
-let mockSlug = 'building-production-rag-systems'
+const mockNotFound = jest.fn(() => {
+  throw new Error('NEXT_NOT_FOUND')
+})
 jest.mock('next/navigation', () => ({
-  useParams: () => ({ slug: mockSlug }),
+  notFound: () => mockNotFound(),
 }))
 
-// next/link — render as a plain <a>
 jest.mock('next/link', () => {
   const Link = ({ href, children }: { href: string; children: React.ReactNode }) => (
     <a href={href}>{children}</a>
@@ -31,7 +21,6 @@ jest.mock('next/link', () => {
   return Link
 })
 
-// framer-motion — pass-through div
 jest.mock('framer-motion', () => ({
   motion: {
     div: ({ children, ...props }: React.HTMLProps<HTMLDivElement>) => (
@@ -40,7 +29,6 @@ jest.mock('framer-motion', () => ({
   },
 }))
 
-// lucide-react icons
 jest.mock('lucide-react', () => ({
   ArrowLeft: () => null,
   Calendar: () => null,
@@ -48,97 +36,147 @@ jest.mock('lucide-react', () => ({
   Tag: () => null,
 }))
 
-import BlogPostPage from '../../app/blog/[slug]/page'
+import BlogPostPage, { generateMetadata, generateStaticParams } from '../../app/blog/[slug]/page'
+import BlogPostNotFound from '../../app/blog/[slug]/not-found'
 
-// ------------------------------------------------------------------
-// Tests
-// ------------------------------------------------------------------
+class TestErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+
+  render() {
+    if (this.state.error) return null
+    return this.props.children
+  }
+}
 
 describe('BlogPostPage — valid slug', () => {
+  const params = { slug: 'building-production-rag-systems' }
+
   beforeEach(() => {
-    mockSlug = 'building-production-rag-systems'
+    mockNotFound.mockClear()
   })
 
   it('renders the post title', () => {
-    render(<BlogPostPage />)
-    expect(
-      screen.getByText(/Building Production-Grade RAG Systems/i),
-    ).toBeInTheDocument()
+    render(<BlogPostPage params={params} />)
+    // The title appears both in the header and as the markdown content's
+    // leading "# " line, so multiple matches are expected.
+    expect(screen.getAllByText(/Building Production-Grade RAG Systems/i).length).toBeGreaterThan(0)
   })
 
   it('renders the category badge', () => {
-    render(<BlogPostPage />)
+    render(<BlogPostPage params={params} />)
     expect(screen.getByText('Generative AI')).toBeInTheDocument()
   })
 
   it('renders the read time', () => {
-    render(<BlogPostPage />)
+    render(<BlogPostPage params={params} />)
     expect(screen.getByText('12 min read')).toBeInTheDocument()
   })
 
   it('renders a formatted date string', () => {
-    render(<BlogPostPage />)
-    // Date 2024-12-15 formats to "December 15, 2024" in en-US locale
+    render(<BlogPostPage params={params} />)
     expect(screen.getByText(/December 15, 2024/i)).toBeInTheDocument()
+  })
+
+  it('does not call notFound', () => {
+    render(<BlogPostPage params={params} />)
+    expect(mockNotFound).not.toHaveBeenCalled()
   })
 })
 
 describe('BlogPostPage — invalid slug', () => {
   beforeEach(() => {
-    mockSlug = 'this-does-not-exist'
+    mockNotFound.mockClear()
   })
 
+  it('calls notFound() instead of rendering', () => {
+    render(
+      <TestErrorBoundary>
+        <BlogPostPage params={{ slug: 'this-does-not-exist' }} />
+      </TestErrorBoundary>
+    )
+    expect(mockNotFound).toHaveBeenCalled()
+  })
+})
+
+describe('BlogPostNotFound', () => {
   it('renders "Post Not Found"', () => {
-    render(<BlogPostPage />)
+    render(<BlogPostNotFound />)
     expect(screen.getByText(/Post Not Found/i)).toBeInTheDocument()
   })
 
   it('renders a "Back to Blog" link', () => {
-    render(<BlogPostPage />)
+    render(<BlogPostNotFound />)
     expect(screen.getByRole('link', { name: /back to blog/i })).toBeInTheDocument()
   })
 })
 
 describe('BlogPostPage — markdown rendering', () => {
-  // Use the YOLO post which has ###-level headings and bullet lists
-  beforeEach(() => {
-    mockSlug = 'yolo-object-detection-evolution'
-  })
+  const params = { slug: 'yolo-object-detection-evolution' }
 
   it('renders # heading as h1', () => {
-    render(<BlogPostPage />)
+    render(<BlogPostPage params={params} />)
     const h1s = screen.getAllByRole('heading', { level: 1 })
-    const match = h1s.find((el) => el.textContent?.includes('YOLO Object Detection'))
-    expect(match).toBeTruthy()
+    expect(h1s.some((el) => el.textContent?.includes('YOLO Object Detection'))).toBe(true)
   })
 
   it('renders ## heading as h2', () => {
-    render(<BlogPostPage />)
+    render(<BlogPostPage params={params} />)
     const h2s = screen.getAllByRole('heading', { level: 2 })
-    const match = h2s.find((el) => el.textContent?.includes('Evolution of YOLO'))
-    expect(match).toBeTruthy()
+    expect(h2s.some((el) => el.textContent?.includes('Evolution of YOLO'))).toBe(true)
   })
 
   it('renders ### heading as h3', () => {
-    render(<BlogPostPage />)
+    render(<BlogPostPage params={params} />)
     const h3s = screen.getAllByRole('heading', { level: 3 })
-    const match = h3s.find((el) => el.textContent?.includes('YOLOv5'))
-    expect(match).toBeTruthy()
+    expect(h3s.some((el) => el.textContent?.includes('YOLOv5'))).toBe(true)
   })
 
-  it('renders - bullet items as <li> elements', () => {
-    render(<BlogPostPage />)
-    const listItems = screen.getAllByRole('listitem')
-    const match = listItems.find((el) =>
-      el.textContent?.includes('PyTorch-based implementation'),
+  it('renders - bullet items inside a <ul>', () => {
+    render(<BlogPostPage params={params} />)
+    const lists = screen.getAllByRole('list')
+    const ul = lists.find((el) => el.tagName === 'UL' && el.textContent?.includes('PyTorch-based implementation'))
+    expect(ul).toBeTruthy()
+    expect(ul?.querySelector('li')).toBeTruthy()
+  })
+
+  it('renders numbered list items inside an <ol>', () => {
+    render(<BlogPostPage params={params} />)
+    const lists = screen.getAllByRole('list')
+    const ol = lists.find((el) => el.tagName === 'OL' && el.textContent?.includes('Data Quality'))
+    expect(ol).toBeTruthy()
+    expect(ol?.querySelector('li')).toBeTruthy()
+  })
+})
+
+describe('generateStaticParams', () => {
+  it('returns a params object for every blog post', () => {
+    const params = generateStaticParams()
+    expect(params).toEqual(
+      expect.arrayContaining([
+        { slug: 'building-production-rag-systems' },
+        { slug: 'yolo-object-detection-evolution' },
+        { slug: 'mlops-azure-ml-studio' },
+      ])
     )
-    expect(match).toBeTruthy()
+  })
+})
+
+describe('generateMetadata', () => {
+  it('returns the post title and excerpt for a known slug', () => {
+    const metadata = generateMetadata({ params: { slug: 'building-production-rag-systems' } })
+    expect(metadata.title).toContain('Building Production-Grade RAG Systems')
+    expect(metadata.description).toMatch(/comprehensive guide/i)
   })
 
-  it('renders numbered list items as <li> elements', () => {
-    render(<BlogPostPage />)
-    const listItems = screen.getAllByRole('listitem')
-    const match = listItems.find((el) => el.textContent?.includes('Data Quality'))
-    expect(match).toBeTruthy()
+  it('returns a fallback title for an unknown slug', () => {
+    const metadata = generateMetadata({ params: { slug: 'nonexistent' } })
+    expect(metadata.title).toBe('Post Not Found')
   })
 })

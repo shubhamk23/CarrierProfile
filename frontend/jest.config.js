@@ -23,6 +23,17 @@ const customConfig = {
     '!**/*.d.ts',
     '!**/node_modules/**',
   ],
+  // Baseline floor as of the API-surface cleanup, not an aspirational
+  // target -- the untested presentational components (About, Hero, Skills,
+  // etc.) still need coverage to reach the project's 80% standard.
+  coverageThreshold: {
+    global: {
+      statements: 55,
+      branches: 45,
+      functions: 50,
+      lines: 55,
+    },
+  },
 }
 
 module.exports = createJestConfig(customConfig)

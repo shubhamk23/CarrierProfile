@@ -1,16 +1,12 @@
 """Tests for the /api/contact router (app/routers/contact.py).
 
-The contact router has three distinct concerns tested here:
-1. Input validation (Pydantic / FastAPI 422 responses)
-2. DB-primary storage path (happy path)
-3. JSON-file fallback when the DB raises an exception
-4. Email failures must not cause the request to fail
-5. Admin GET /api/contact/messages endpoint
+Delivery has two independent channels (DB insert, email notification).
+The request succeeds if either lands, and only 500s if both fail or
+neither is configured.
 """
-import io
-import json
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, mock_open
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -23,14 +19,35 @@ VALID_PAYLOAD = {
 
 
 def _make_async_db(*, raise_on_commit: bool = False):
-    """Return a mock AsyncSession."""
     session = AsyncMock()
     session.add = MagicMock()
+    session.rollback = AsyncMock()
     if raise_on_commit:
         session.commit = AsyncMock(side_effect=Exception("DB unavailable"))
     else:
         session.commit = AsyncMock(return_value=None)
     return session
+
+
+@pytest.fixture
+def app_with_db_override():
+    """Yield (app, db_session) with get_db overridden; cleans up after."""
+
+    def _make(db_session):
+        from app.main import app
+        from app.database.connection import get_db
+
+        async def override_get_db():
+            yield db_session
+
+        app.dependency_overrides[get_db] = override_get_db
+        return app
+
+    yield _make
+
+    from app.main import app
+
+    app.dependency_overrides.clear()
 
 
 class TestSubmitContactFormValidation:
@@ -61,215 +78,218 @@ class TestSubmitContactFormValidation:
 
 
 class TestSubmitContactFormDBPath:
-    def test_success_with_database_returns_200(self):
-        from app.main import app
-
-        db_session = _make_async_db(raise_on_commit=False)
-
-        async def override_get_db():
-            yield db_session
-
-        import io as _io
-        from app.database.connection import get_db
-        from app.routers import profile as _profile_router
-
-        profile_json = json.dumps(_profile_data())
-
-        app.dependency_overrides[get_db] = override_get_db
-
-        with patch("builtins.open", return_value=_io.StringIO(profile_json)):
-            with patch("app.routers.contact.send_email_notification", new=AsyncMock()):
-                with TestClient(app, raise_server_exceptions=True) as c:
-                    response = c.post("/api/contact", json=VALID_PAYLOAD)
-
-        app.dependency_overrides.clear()
+    def test_db_success_returns_200(self, app_with_db_override):
+        app = app_with_db_override(_make_async_db())
+        with TestClient(app, raise_server_exceptions=True) as c:
+            response = c.post("/api/contact", json=VALID_PAYLOAD)
 
         assert response.status_code == 200
         body = response.json()
         assert body["success"] is True
+        assert len(body["message"]) > 0
 
-    def test_response_message_is_non_empty(self):
-        from app.main import app
-        from app.database.connection import get_db
-        import io as _io
+    def test_db_failure_with_no_email_configured_returns_500(
+        self, app_with_db_override
+    ):
+        """DB is the only channel; if it fails and email isn't configured, the
+        message would silently vanish, so this must surface as a failure."""
+        app = app_with_db_override(_make_async_db(raise_on_commit=True))
+        with TestClient(app, raise_server_exceptions=True) as c:
+            response = c.post("/api/contact", json=VALID_PAYLOAD)
 
-        db_session = _make_async_db()
+        assert response.status_code == 500
 
-        async def override_get_db():
-            yield db_session
-
-        app.dependency_overrides[get_db] = override_get_db
-
-        profile_json = json.dumps(_profile_data())
-        with patch("builtins.open", return_value=_io.StringIO(profile_json)):
-            with patch("app.routers.contact.send_email_notification", new=AsyncMock()):
-                with TestClient(app, raise_server_exceptions=True) as c:
-                    body = c.post("/api/contact", json=VALID_PAYLOAD).json()
-
-        app.dependency_overrides.clear()
-        assert len(body.get("message", "")) > 0
-
-
-class TestSubmitContactFormFallback:
-    def test_falls_back_to_file_when_db_fails(self):
-        """When the DB commit raises, the router should silently fall back to file storage."""
-        from app.main import app
-        from app.database.connection import get_db
-        import io as _io
-
+    def test_db_failure_rolls_back_session(self, app_with_db_override):
         db_session = _make_async_db(raise_on_commit=True)
+        app = app_with_db_override(db_session)
+        with TestClient(app, raise_server_exceptions=True) as c:
+            c.post("/api/contact", json=VALID_PAYLOAD)
 
-        async def override_get_db():
-            yield db_session
+        db_session.rollback.assert_awaited_once()
 
-        app.dependency_overrides[get_db] = override_get_db
+    def test_db_unconfigured_with_no_email_configured_returns_500(
+        self, app_with_db_override
+    ):
+        app = app_with_db_override(None)
+        with TestClient(app, raise_server_exceptions=True) as c:
+            response = c.post("/api/contact", json=VALID_PAYLOAD)
 
-        profile_json = json.dumps(_profile_data())
-        # Mock the file-write path so we don't touch the real filesystem
-        with patch("builtins.open", side_effect=_open_side_effect(profile_json)):
-            with patch("app.routers.contact.send_email_notification", new=AsyncMock()):
-                with patch("app.routers.contact.MESSAGES_PATH") as mock_path:
-                    mock_path.exists.return_value = False
-                    mock_path.parent.mkdir = MagicMock()
-                    with patch("builtins.open", mock_open(read_data="[]")):
-                        with TestClient(app, raise_server_exceptions=True) as c:
-                            response = c.post("/api/contact", json=VALID_PAYLOAD)
+        assert response.status_code == 500
 
-        app.dependency_overrides.clear()
+
+class TestSubmitContactFormEmailPath:
+    def test_email_success_covers_db_failure(self, app_with_db_override, monkeypatch):
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "resend_api_key", "test-key")
+        monkeypatch.setattr(settings, "resend_to_email", "owner@example.com")
+
+        app = app_with_db_override(_make_async_db(raise_on_commit=True))
+        with patch("app.routers.contact.send_email_notification", new=AsyncMock()):
+            with TestClient(app, raise_server_exceptions=True) as c:
+                response = c.post("/api/contact", json=VALID_PAYLOAD)
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+    def test_email_success_covers_db_unconfigured(
+        self, app_with_db_override, monkeypatch
+    ):
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "resend_api_key", "test-key")
+        monkeypatch.setattr(settings, "resend_to_email", "owner@example.com")
+
+        app = app_with_db_override(None)
+        with patch("app.routers.contact.send_email_notification", new=AsyncMock()):
+            with TestClient(app, raise_server_exceptions=True) as c:
+                response = c.post("/api/contact", json=VALID_PAYLOAD)
+
         assert response.status_code == 200
 
+    def test_email_failure_does_not_mask_successful_db_write(
+        self, app_with_db_override, monkeypatch
+    ):
+        from app.config import settings
 
-class TestEmailFailureNonBlocking:
-    def test_email_error_does_not_cause_500(self):
-        from app.main import app
-        from app.database.connection import get_db
-        import io as _io
+        monkeypatch.setattr(settings, "resend_api_key", "test-key")
+        monkeypatch.setattr(settings, "resend_to_email", "owner@example.com")
 
-        db_session = _make_async_db()
-
-        async def override_get_db():
-            yield db_session
-
-        app.dependency_overrides[get_db] = override_get_db
-
-        profile_json = json.dumps(_profile_data())
+        app = app_with_db_override(_make_async_db())
 
         async def failing_email(_):
             raise Exception("SMTP timeout")
 
-        with patch("builtins.open", return_value=_io.StringIO(profile_json)):
-            with patch("app.routers.contact.send_email_notification", new=failing_email):
-                with TestClient(app, raise_server_exceptions=True) as c:
-                    response = c.post("/api/contact", json=VALID_PAYLOAD)
+        with patch("app.routers.contact.send_email_notification", new=failing_email):
+            with TestClient(app, raise_server_exceptions=True) as c:
+                response = c.post("/api/contact", json=VALID_PAYLOAD)
 
-        app.dependency_overrides.clear()
         assert response.status_code == 200
 
+    def test_both_channels_failing_returns_500(self, app_with_db_override, monkeypatch):
+        from app.config import settings
 
-class TestGetMessages:
-    def test_returns_200_with_db(self):
-        from app.main import app
-        from app.database.connection import get_db
-        import io as _io
-        from sqlalchemy import select
+        monkeypatch.setattr(settings, "resend_api_key", "test-key")
+        monkeypatch.setattr(settings, "resend_to_email", "owner@example.com")
 
-        db_session = AsyncMock()
-        result_mock = MagicMock()
-        result_mock.scalars.return_value.all.return_value = []
-        db_session.execute = AsyncMock(return_value=result_mock)
+        app = app_with_db_override(_make_async_db(raise_on_commit=True))
 
-        async def override_get_db():
-            yield db_session
+        async def failing_email(_):
+            raise Exception("SMTP timeout")
 
-        app.dependency_overrides[get_db] = override_get_db
-
-        profile_json = json.dumps(_profile_data())
-        with patch("builtins.open", return_value=_io.StringIO(profile_json)):
+        with patch("app.routers.contact.send_email_notification", new=failing_email):
             with TestClient(app, raise_server_exceptions=True) as c:
-                response = c.get("/api/contact/messages")
+                response = c.post("/api/contact", json=VALID_PAYLOAD)
 
-        app.dependency_overrides.clear()
-        assert response.status_code == 200
-        assert isinstance(response.json(), list)
+        assert response.status_code == 500
 
-    def test_returns_empty_list_when_no_messages(self):
-        from app.main import app
-        from app.database.connection import get_db
-        import io as _io
+    def test_email_html_escapes_message_content(self, monkeypatch):
+        """A visitor-supplied <script> tag must not reach the notification
+        email unescaped."""
+        import asyncio
+        from app.models import ContactMessage
+        from app.routers.contact import send_email_notification
+        from app.config import settings
 
-        db_session = AsyncMock()
-        result_mock = MagicMock()
-        result_mock.scalars.return_value.all.return_value = []
-        db_session.execute = AsyncMock(return_value=result_mock)
+        monkeypatch.setattr(settings, "resend_api_key", "test-key")
+        monkeypatch.setattr(settings, "resend_to_email", "owner@example.com")
 
-        async def override_get_db():
-            yield db_session
+        malicious = ContactMessage(
+            name="<script>alert(1)</script>",
+            email="attacker@example.com",
+            subject="hi",
+            message="line1\nline2",
+        )
 
-        app.dependency_overrides[get_db] = override_get_db
+        captured = {}
 
-        profile_json = json.dumps(_profile_data())
-        with patch("builtins.open", return_value=_io.StringIO(profile_json)):
-            with TestClient(app, raise_server_exceptions=True) as c:
-                body = c.get("/api/contact/messages").json()
+        def fake_send(params):
+            captured.update(params)
+            return {"id": "test"}
 
-        app.dependency_overrides.clear()
-        assert body == []
+        with patch("resend.Emails.send", side_effect=fake_send):
+            asyncio.run(send_email_notification(malicious))
+
+        assert "<script>alert(1)</script>" not in captured["html"]
+        assert "&lt;script&gt;" in captured["html"]
+
+    def test_email_strips_crlf_from_subject_header(self, monkeypatch):
+        """The subject reaches an email header, so CR/LF must not survive --
+        otherwise it is a header-injection primitive."""
+        import asyncio
+        from app.models import ContactMessage
+        from app.routers.contact import send_email_notification
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "resend_api_key", "test-key")
+        monkeypatch.setattr(settings, "resend_to_email", "owner@example.com")
+
+        injected = ContactMessage(
+            name="Attacker",
+            email="attacker@example.com",
+            subject="Hello\r\nBcc: victim@example.com",
+            message="body text here",
+        )
+
+        captured = {}
+
+        def fake_send(params):
+            captured.update(params)
+            return {"id": "test"}
+
+        with patch("resend.Emails.send", side_effect=fake_send):
+            asyncio.run(send_email_notification(injected))
+
+        assert "\r" not in captured["subject"]
+        assert "\n" not in captured["subject"]
+        assert captured["subject"] == "Portfolio Contact: Hello Bcc: victim@example.com"
+
+    def test_email_address_is_html_escaped(self, monkeypatch):
+        """Every visitor-supplied field in the notification HTML is escaped,
+        including the email address."""
+        import asyncio
+        from app.routers.contact import send_email_notification
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "resend_api_key", "test-key")
+        monkeypatch.setattr(settings, "resend_to_email", "owner@example.com")
+
+        class _RawEmail:
+            """Bypass EmailStr so the escaping itself is what's under test."""
+
+            name = "Attacker"
+            email = '"<img src=x onerror=alert(1)>"@example.com'
+            subject = "hi"
+            message = "body"
+
+        captured = {}
+
+        def fake_send(params):
+            captured.update(params)
+            return {"id": "test"}
+
+        with patch("resend.Emails.send", side_effect=fake_send):
+            asyncio.run(send_email_notification(_RawEmail()))
+
+        assert "<img src=x" not in captured["html"]
+        assert "&lt;img" in captured["html"]
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+class TestRateLimit:
+    def test_sixth_submission_within_window_returns_429(self, app_with_db_override):
+        app = app_with_db_override(_make_async_db())
+        with TestClient(app, raise_server_exceptions=True) as c:
+            for _ in range(5):
+                response = c.post("/api/contact", json=VALID_PAYLOAD)
+                assert response.status_code == 200
+            response = c.post("/api/contact", json=VALID_PAYLOAD)
 
-def _profile_data():
-    """Minimal profile dict to satisfy the profile router's open() call."""
-    return {
-        "name": "Test",
-        "title": "Engineer",
-        "subtitle": "Sub",
-        "location": "Pune",
-        "phone": "000",
-        "email": "t@t.com",
-        "linkedin": "https://linkedin.com/in/t",
-        "github": "https://github.com/t",
-        "summary": "Summary",
-        "skills": {
-            "languages": ["Python"],
-            "ml_dl_frameworks": ["PyTorch"],
-            "computer_vision": ["OpenCV"],
-            "generative_ai_nlp": ["LangChain"],
-            "mlops_devops": ["Docker"],
-            "cloud_data": ["Azure"],
-            "software_engineering": ["FastAPI"],
-        },
-        "experience": [],
-        "projects": [],
-        "education": {
-            "degree": "B.E.",
-            "institution": "Uni",
-            "location": "City",
-            "period": "2015-2019",
-        },
-        "certifications": [],
-        "awards": [],
-    }
+        assert response.status_code == 429
 
 
-def _open_side_effect(profile_json: str):
-    """Return a side_effect callable that yields a StringIO for the profile
-    JSON and a mock for any other path (e.g. messages.json writes)."""
-    import io as _io
-
-    call_count = {"n": 0}
-
-    def _side_effect(*args, **kwargs):
-        if call_count["n"] == 0:
-            call_count["n"] += 1
-            return _io.StringIO(profile_json)
-        # subsequent open() calls (messages.json) get a writable mock
-        m = MagicMock()
-        m.__enter__ = lambda s: s
-        m.__exit__ = MagicMock(return_value=False)
-        m.read = MagicMock(return_value="[]")
-        return m
-
-    return _side_effect
+class TestAdminEndpointRemoved:
+    def test_get_messages_endpoint_no_longer_exists(self, client):
+        """The unauthenticated admin endpoint was deleted; it must not be
+        routable under any method."""
+        response = client.get("/api/contact/messages")
+        assert response.status_code == 404

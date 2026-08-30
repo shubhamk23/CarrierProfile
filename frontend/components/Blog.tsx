@@ -3,42 +3,10 @@
 import { motion } from 'framer-motion'
 import { useInView } from 'framer-motion'
 import { useRef } from 'react'
-import { BookOpen, Calendar, ArrowRight, Clock } from 'lucide-react'
+import { Calendar, ArrowRight, Clock } from 'lucide-react'
+import { getAllBlogPosts, formatBlogDate } from '@/lib/blog-posts'
 
-const blogPosts = [
-  {
-    title: 'Building Production-Grade RAG Systems with LangChain',
-    excerpt: 'A comprehensive guide to architecting and deploying RAG systems for enterprise applications, covering vector databases, retrieval strategies, and evaluation metrics.',
-    date: '2024-12-15',
-    readTime: '12 min read',
-    category: 'Generative AI',
-    slug: 'building-production-rag-systems',
-  },
-  {
-    title: 'YOLO Object Detection: From v5 to v11',
-    excerpt: 'Exploring the evolution of YOLO models and practical tips for training custom object detection models for industrial applications.',
-    date: '2024-11-20',
-    readTime: '10 min read',
-    category: 'Computer Vision',
-    slug: 'yolo-object-detection-evolution',
-  },
-  {
-    title: 'MLOps Best Practices with Azure ML Studio',
-    excerpt: 'Learn how to set up end-to-end MLOps pipelines using Azure ML Studio, including experiment tracking, model versioning, and automated deployments.',
-    date: '2024-10-05',
-    readTime: '15 min read',
-    category: 'MLOps',
-    slug: 'mlops-azure-ml-studio',
-  },
-]
-
-function formatDate(dateString: string) {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
-}
+const blogPosts = getAllBlogPosts()
 
 export default function Blog() {
   const ref = useRef(null)
@@ -77,7 +45,7 @@ export default function Blog() {
             <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
               <span className="flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
-                {formatDate(post.date)}
+                {formatBlogDate(post.date)}
               </span>
               <span className="flex items-center gap-1">
                 <Clock className="w-3 h-3" />

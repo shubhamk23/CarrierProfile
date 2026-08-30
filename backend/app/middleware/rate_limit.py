@@ -26,7 +26,9 @@ limiter = Limiter(
     key_func=get_client_identifier,
     default_limits=[],  # No default limits, we'll apply per-route
     enabled=settings.rate_limit_enabled,
-    storage_uri="memory://",  # In-memory storage (resets on cold start, but good enough for basic protection)
+    # ponytail: per-instance limit, resets on cold start. Upgrade to Upstash
+    # Redis storage_uri if abuse becomes real.
+    storage_uri="memory://",
 )
 
 # Middleware class for adding to FastAPI app

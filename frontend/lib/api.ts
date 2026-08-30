@@ -1,5 +1,3 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
-
 export interface ContactMessage {
   name: string
   email: string
@@ -7,18 +5,13 @@ export interface ContactMessage {
   message: string
 }
 
-export interface BlogPost {
-  slug: string
-  title: string
-  excerpt: string
-  content: string
-  date: string
-  readTime: string
-  category: string
+export interface ContactResponse {
+  success: boolean
+  message: string
 }
 
-export async function submitContactForm(data: ContactMessage): Promise<{ success: boolean; message: string }> {
-  const response = await fetch(`${API_BASE_URL}/api/contact`, {
+export async function submitContactForm(data: ContactMessage): Promise<ContactResponse> {
+  const response = await fetch('/api/contact', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -26,39 +19,14 @@ export async function submitContactForm(data: ContactMessage): Promise<{ success
     body: JSON.stringify(data),
   })
 
-  if (!response.ok) {
-    throw new Error('Failed to submit contact form')
-  }
-
-  return response.json()
-}
-
-export async function getBlogPosts(): Promise<BlogPost[]> {
-  const response = await fetch(`${API_BASE_URL}/api/blog`)
+  const body = await response.json().catch(() => null)
 
   if (!response.ok) {
-    throw new Error('Failed to fetch blog posts')
+    const detail = body?.detail ?? body?.message
+    throw new Error(
+      typeof detail === 'string' ? detail : `Failed to submit contact form (${response.status})`
+    )
   }
 
-  return response.json()
-}
-
-export async function getBlogPost(slug: string): Promise<BlogPost> {
-  const response = await fetch(`${API_BASE_URL}/api/blog/${slug}`)
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch blog post')
-  }
-
-  return response.json()
-}
-
-export async function getProfile() {
-  const response = await fetch(`${API_BASE_URL}/api/profile`)
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch profile')
-  }
-
-  return response.json()
+  return body as ContactResponse
 }

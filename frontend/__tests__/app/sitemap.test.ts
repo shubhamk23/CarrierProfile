@@ -20,9 +20,21 @@ describe('sitemap()', () => {
     jest.resetModules()
   })
 
-  it('returns exactly 7 entries', () => {
+  it('returns the 7 section entries plus one per blog post', () => {
     const sitemap = loadSitemap()
-    expect(sitemap()).toHaveLength(7)
+    expect(sitemap()).toHaveLength(10)
+  })
+
+  it('includes an entry for every blog post slug', () => {
+    const sitemap = loadSitemap()
+    const entries = sitemap()
+    for (const slug of [
+      'building-production-rag-systems',
+      'yolo-object-detection-evolution',
+      'mlops-azure-ml-studio',
+    ]) {
+      expect(entries.some((e: { url: string }) => e.url.endsWith(`/blog/${slug}`))).toBe(true)
+    }
   })
 
   it('root entry has priority 1', () => {

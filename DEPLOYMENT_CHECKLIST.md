@@ -1,5 +1,27 @@
 # Deployment Implementation Checklist
 
+## Do this first: rotate the leaked database credential
+
+A real Supabase password was committed to `backend/.env.example` and pushed to
+a **public** repository. The file has been scrubbed, but the credential is
+still in git history, so scrubbing alone does not make it safe.
+
+- [ ] Supabase Dashboard > Settings > Database > **Reset database password**
+- [ ] Update `DATABASE_URL` in Vercel project env vars with the new password
+      (use the pooler endpoint, port 6543)
+- [ ] Redeploy the backend so it picks up the new value
+- [ ] Confirm `GET /api/health` still returns `{"status": "healthy"}` and one
+      real contact form submission lands in the database
+
+History was deliberately **not** rewritten - a force-push over a public repo
+with an already-merged PR carries more risk than it removes. Rotation is what
+makes the old value worthless.
+
+The unauthenticated `GET /api/contact/messages` endpoint, which exposed every
+visitor's name, email, IP address, and message, has been deleted. Read
+submissions in the Supabase dashboard or via the Resend notification email.
+
+
 ## ✅ Completed Implementation Tasks
 
 All code changes and configurations have been implemented according to the deployment plan. Here's what was completed:
@@ -158,8 +180,9 @@ Follow prompts:
 After deployment:
 1. Go to Vercel Dashboard > Your Project > Settings > Environment Variables
 2. Add these variables:
-   - `DATABASE_URL` = [Supabase URL from Step 2]
-   - `SECRET_KEY` = [Generate with: `openssl rand -hex 32`]
+   - `DATABASE_URL` = [Supabase URL from Step 2 - use the **pooler** endpoint,
+     port 6543, not the direct 5432 connection; serverless functions fan out
+     and PgBouncer is what absorbs that]
    - `RESEND_API_KEY` = [From Step 3]
    - `RESEND_FROM_EMAIL` = `onboarding@resend.dev`
    - `RESEND_TO_EMAIL` = [Your email]
@@ -178,13 +201,32 @@ source venv/bin/activate
 
 # Create .env with production DATABASE_URL
 echo "DATABASE_URL=your-supabase-url-here" > .env
+```
 
-# Run migrations
+**If this database is brand new** (no `contact_messages` table yet):
+
+```bash
 alembic upgrade head
 ```
 
+**If `contact_messages` already exists** (created by the old
+`create_all`-at-startup behaviour), tell Alembic its history starts at the
+baseline first, or `upgrade` will try to `CREATE TABLE` over the live table:
+
+```bash
+alembic stamp 0001_baseline   # records the baseline, runs no DDL
+alembic upgrade head          # applies only 0002's cleanup
+```
+
+Migration `0002` drops the redundant `timestamp`, `read`, and `updated_at`
+columns and four unused indexes. **Take a Supabase backup first if you have
+submissions you care about** - `timestamp` duplicates `created_at`, so no
+unique data is lost, but the drop is not reversible without the backup.
+
 Verify in Supabase:
-- Table Editor should show `contact_messages` and `alembic_version` tables
+- Table Editor should show `contact_messages` and `alembic_version`
+- `contact_messages` should have exactly: `id`, `name`, `email`, `subject`,
+  `message`, `ip_address`, `user_agent`, `created_at`
 
 ### Step 8: Deploy Frontend to Vercel (10 minutes)
 

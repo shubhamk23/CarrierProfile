@@ -82,7 +82,9 @@ CarrierProfile/
 │   │   ├── Navigation.tsx
 │   │   └── ThemeToggle.tsx
 │   ├── lib/
-│   │   └── api.ts                # API client
+│   │   ├── api.ts                # API client (contact form only)
+│   │   ├── blog-posts.ts         # Blog content, single source of truth
+│   │   └── site-config.ts        # Contact/social constants
 │   ├── next.config.js            # Security headers, CSP
 │   ├── vercel.json               # Additional security headers
 │   └── package.json
@@ -100,13 +102,10 @@ CarrierProfile/
 │   │   │   └── models.py        # Database models
 │   │   ├── middleware/
 │   │   │   └── rate_limit.py    # Rate limiting
-│   │   ├── routers/
-│   │   │   ├── profile.py
-│   │   │   ├── blog.py
-│   │   │   └── contact.py       # Contact form + Resend
-│   │   └── data/
-│   │       └── profile.json
+│   │   └── routers/
+│   │       └── contact.py       # Contact form + Resend (the only router)
 │   ├── requirements.txt
+│   ├── requirements-dev.txt
 │   ├── alembic.ini
 │   └── vercel.json
 │
@@ -149,11 +148,9 @@ cp .env.example .env
 Edit `backend/.env` with your configuration:
 
 ```env
-# Database (Required)
+# Database (optional locally -- without it the contact form falls back to
+# email-only delivery). Use the Supabase pooler endpoint (port 6543) in prod.
 DATABASE_URL=postgresql://user:password@localhost:5432/carrierprofile
-
-# Security (Required)
-SECRET_KEY=your-secret-key-here  # Generate with: openssl rand -hex 32
 
 # Email (Optional for local dev)
 RESEND_API_KEY=your-resend-api-key
@@ -226,8 +223,7 @@ The frontend will be available at http://localhost:3000
 
 | Variable | Description | Required | Default | Example |
 |----------|-------------|----------|---------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | Yes | - | `postgresql://user:pass@host:5432/db` |
-| `SECRET_KEY` | Application secret key | Yes | - | Generate with `openssl rand -hex 32` |
+| `DATABASE_URL` | PostgreSQL connection string (use the Supabase pooler, port 6543) | No* | "" | `postgresql://user:pass@host:6543/db` |
 | `RESEND_API_KEY` | Resend email API key | No* | "" | `re_123...` |
 | `RESEND_FROM_EMAIL` | Email sender address | No | `onboarding@resend.dev` | `noreply@yourdomain.com` |
 | `RESEND_TO_EMAIL` | Email recipient address | No* | "" | `you@example.com` |
@@ -237,7 +233,10 @@ The frontend will be available at http://localhost:3000
 | `RATE_LIMIT_TIMES` | Max requests per period | No | `5` | `5` |
 | `RATE_LIMIT_SECONDS` | Rate limit period (seconds) | No | `3600` | `3600` |
 
-*Required for production email notifications
+*The contact form needs at least one working delivery channel. Configure
+`DATABASE_URL`, or `RESEND_API_KEY` + `RESEND_TO_EMAIL`, or (recommended) both --
+if neither is set, `POST /api/contact` returns 500 rather than silently
+discarding a visitor's message.
 
 ### Frontend Environment Variables
 
@@ -253,15 +252,25 @@ The frontend will be available at http://localhost:3000
 |--------|----------|-------------|--------------|
 | GET | `/` | API info | No |
 | GET | `/api/health` | Health check | No |
-| GET | `/api/profile` | Full profile data | No |
-| GET | `/api/experience` | Work experience list | No |
-| GET | `/api/skills` | Skills by category | No |
-| GET | `/api/projects` | Project details | No |
-| GET | `/api/achievements` | Awards & certifications | No |
-| GET | `/api/blog` | Blog posts list | No |
-| GET | `/api/blog/{slug}` | Single blog post | No |
 | POST | `/api/contact` | Submit contact form | Yes (5/hour) |
-| GET | `/api/contact/messages` | Get all messages (admin) | No |
+
+That is the entire API surface, by design. The site's content (profile,
+experience, skills, projects, blog posts) is statically rendered by Next.js
+from data that lives in the frontend, so the backend exists purely to receive
+contact form submissions.
+
+Read submissions in the Supabase dashboard or via the Resend notification
+email. There is deliberately no admin read endpoint -- an unauthenticated one
+previously exposed every visitor's name, email, IP address, and message.
+
+### Contact form delivery
+
+`POST /api/contact` writes to the database **and** sends an email
+notification. These are independent channels: the request succeeds if either
+one lands, and only returns 500 if both fail (or neither is configured), so a
+visitor's message is never silently dropped. There is no local-file fallback --
+Vercel's filesystem is read-only, so file storage could never have worked in
+production.
 
 ## Deployment Guide
 
@@ -373,12 +382,28 @@ alembic revision --autogenerate -m "Description of changes"
 ### Apply Migrations
 
 ```bash
-# Local
+# Local / CI (fresh database -- runs the full 0001 -> 0002 chain)
 alembic upgrade head
 
 # Production (set DATABASE_URL to production)
 DATABASE_URL=postgresql://... alembic upgrade head
 ```
+
+#### One-time step for the existing production database
+
+Migration `0001_baseline` documents the schema that the old
+`Base.metadata.create_all` startup call produced. That table already exists in
+production, so do **not** run `upgrade` against it blindly -- tell Alembic its
+history starts at the baseline first, then apply the cleanup:
+
+```bash
+DATABASE_URL=postgresql://... alembic stamp 0001_baseline
+DATABASE_URL=postgresql://... alembic upgrade head
+```
+
+A fresh database needs only `alembic upgrade head`. Startup no longer calls
+`create_all` for schema changes, so every future change must go through a
+migration.
 
 ### Rollback Migration
 
@@ -540,7 +565,13 @@ npm run build
 
 ### Update Profile Data
 
-Edit `backend/app/data/profile.json` with your information
+Site content is statically rendered from the frontend, so edit the components
+directly:
+
+- Profile/experience/skills/projects: `frontend/components/*.tsx`
+- Blog posts: `frontend/lib/blog-posts.ts` (single source -- feeds the blog
+  list, the `/blog/[slug]` pages, and `sitemap.xml`)
+- Email, phone, and social links: `frontend/lib/site-config.ts`
 
 ### Modify Colors
 
