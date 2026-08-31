@@ -7,6 +7,8 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Mail, Send, Loader2, CheckCircle, AlertCircle, MapPin, Phone, Linkedin, Github } from 'lucide-react'
+import { submitContactForm } from '@/lib/api'
+import { siteConfig } from '@/lib/site-config'
 
 const contactSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -37,19 +39,11 @@ export default function Contact() {
     setSubmitStatus('idle')
 
     try {
-      const response = await fetch('/api/contact', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      })
-
-      if (response.ok) {
-        setSubmitStatus('success')
-        reset()
-      } else {
-        setSubmitStatus('error')
-      }
+      await submitContactForm(data)
+      setSubmitStatus('success')
+      reset()
     } catch (error) {
+      console.error('Contact form submission failed:', error)
       setSubmitStatus('error')
     } finally {
       setIsSubmitting(false)
@@ -76,16 +70,16 @@ export default function Contact() {
           transition={{ duration: 0.5, delay: 0.1 }}
         >
           <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">
-            Let's Connect
+            Let&apos;s Connect
           </h3>
           <p className="text-gray-600 dark:text-gray-300 mb-8">
-            I'm always open to discussing new opportunities, interesting projects, or
+            I&apos;m always open to discussing new opportunities, interesting projects, or
             collaborations in the AI/ML space. Feel free to reach out!
           </p>
 
           <div className="space-y-4">
             <a
-              href="mailto:shubhamkhanapure@gmail.com"
+              href={`mailto:${siteConfig.email}`}
               className="flex items-center gap-4 p-4 rounded-lg bg-white dark:bg-dark-card border border-gray-100 dark:border-dark-border hover:border-primary-500 dark:hover:border-primary-500 transition-colors"
             >
               <div className="p-3 bg-primary-100 dark:bg-primary-900/30 rounded-lg">
@@ -93,12 +87,12 @@ export default function Contact() {
               </div>
               <div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">Email</p>
-                <p className="font-medium text-gray-900 dark:text-white">shubhamkhanapure@gmail.com</p>
+                <p className="font-medium text-gray-900 dark:text-white">{siteConfig.email}</p>
               </div>
             </a>
 
             <a
-              href="tel:+917066424008"
+              href={siteConfig.phoneHref}
               className="flex items-center gap-4 p-4 rounded-lg bg-white dark:bg-dark-card border border-gray-100 dark:border-dark-border hover:border-primary-500 dark:hover:border-primary-500 transition-colors"
             >
               <div className="p-3 bg-primary-100 dark:bg-primary-900/30 rounded-lg">
@@ -106,7 +100,7 @@ export default function Contact() {
               </div>
               <div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">Phone</p>
-                <p className="font-medium text-gray-900 dark:text-white">+91-7066424008</p>
+                <p className="font-medium text-gray-900 dark:text-white">{siteConfig.phone}</p>
               </div>
             </a>
 
@@ -116,13 +110,13 @@ export default function Contact() {
               </div>
               <div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">Location</p>
-                <p className="font-medium text-gray-900 dark:text-white">Pune, India</p>
+                <p className="font-medium text-gray-900 dark:text-white">{siteConfig.location}</p>
               </div>
             </div>
 
             <div className="flex gap-4 pt-4">
               <a
-                href="https://www.linkedin.com/in/shubham-khanapure-4191b1127/"
+                href={siteConfig.linkedin}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="p-3 bg-white dark:bg-dark-card border border-gray-100 dark:border-dark-border rounded-lg hover:border-primary-500 dark:hover:border-primary-500 transition-colors"
@@ -130,7 +124,7 @@ export default function Contact() {
                 <Linkedin className="w-5 h-5 text-gray-600 dark:text-gray-300" />
               </a>
               <a
-                href="https://github.com/shubhamk23"
+                href={siteConfig.github}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="p-3 bg-white dark:bg-dark-card border border-gray-100 dark:border-dark-border rounded-lg hover:border-primary-500 dark:hover:border-primary-500 transition-colors"
@@ -147,7 +141,7 @@ export default function Contact() {
           animate={isInView ? { opacity: 1, x: 0 } : {}}
           transition={{ duration: 0.5, delay: 0.2 }}
         >
-          <form onSubmit={handleSubmit(onSubmit)} className="card">
+          <form onSubmit={handleSubmit(onSubmit)} noValidate className="card">
             <div className="space-y-4">
               <div>
                 <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

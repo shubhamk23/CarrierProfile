@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from app.config import settings
 
 # Create async engine
@@ -20,11 +20,15 @@ if database_url:
         max_overflow=settings.database_max_overflow,
         pool_recycle=settings.database_pool_recycle,
         pool_pre_ping=settings.database_pool_pre_ping,
-        # Important for serverless: don't maintain persistent connections
-        pool_timeout=30,
+        # Fail fast on serverless instead of holding the function open
+        pool_timeout=5,
         connect_args={
             "server_settings": {"application_name": "carrier_profile_api"},
-        }
+            # Required when connecting through Supabase's PgBouncer pooler in
+            # transaction mode: asyncpg's server-side prepared statement cache
+            # produces "prepared statement already exists" errors otherwise.
+            "statement_cache_size": 0,
+        },
     )
 
     # Create async session factory
@@ -40,31 +44,32 @@ if database_url:
 Base = declarative_base()
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_db() -> AsyncGenerator[Optional[AsyncSession], None]:
     """
     Dependency for getting async database sessions in FastAPI routes.
 
-    Usage:
-        @router.post("/contact")
-        async def create_contact(message: ContactMessage, db: AsyncSession = Depends(get_db)):
-            ...
+    Yields None when DATABASE_URL is not configured so callers can fall back
+    (e.g. to email-only delivery) instead of the request failing outright.
+    Callers own their own commit/rollback; this dependency only manages the
+    session lifecycle.
     """
     if not async_session_maker:
-        raise RuntimeError("Database is not configured. Set DATABASE_URL environment variable.")
+        yield None
+        return
 
     async with async_session_maker() as session:
         try:
             yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
         finally:
             await session.close()
 
 
 async def init_db():
-    """Initialize database tables (creates tables if they don't exist)"""
+    """Initialize database tables (creates tables if they don't exist).
+
+    This only covers first-deploy bootstrap; schema changes after that go
+    through Alembic migrations (see alembic/versions/), not create_all.
+    """
     if not engine:
         return
 
@@ -72,7 +77,6 @@ async def init_db():
         # Import all models here to ensure they are registered with Base
         from app.database import models  # noqa: F401
 
-        # Create all tables
         await conn.run_sync(Base.metadata.create_all)
 
 

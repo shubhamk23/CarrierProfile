@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 ## Career Profile Website
 
-**Version:** 1.0
-**Last Updated:** 2026-01-24
+**Version:** 1.1
+**Last Updated:** 2026-08-30
 **Product Owner:** Shubham Khanapure
 
 ---
@@ -42,8 +42,9 @@ A modern, responsive career portfolio website that showcases professional experi
 - **Form Handling:** React Hook Form + Zod validation
 
 #### Backend
-- **Framework:** FastAPI (Python 3.9+)
-- **Data Storage:** JSON files (extensible to database)
+- **Framework:** FastAPI (Python 3.12)
+- **Data Storage:** Supabase PostgreSQL via async SQLAlchemy, schema managed by Alembic
+- **Email:** Resend (contact form notifications)
 - **API Documentation:** Auto-generated Swagger/ReDoc
 
 ### 2.2 Architecture Patterns
@@ -167,16 +168,30 @@ A modern, responsive career portfolio website that showcases professional experi
 
 | Method | Endpoint | Description | Response |
 |--------|----------|-------------|----------|
-| GET | `/api/profile` | Full profile data | Profile object |
-| GET | `/api/experience` | Work experience list | Array of experiences |
-| GET | `/api/skills` | Skills by category | Categorized skills object |
-| GET | `/api/projects` | Project details | Array of projects |
-| GET | `/api/achievements` | Awards & certifications | Array of achievements |
-| GET | `/api/blog` | Blog posts list | Array of blog posts |
-| GET | `/api/blog/{slug}` | Single blog post | Blog post object |
+| GET | `/` | API info | Service name and version |
+| GET | `/api/health` | Health check | `{"status": "healthy"}` |
 | POST | `/api/contact` | Submit contact form | Success/error status |
 
+**Revised 2026-08-30.** The read endpoints above were specified but never
+consumed: the frontend statically renders all profile, experience, skills,
+project, and blog content from data that lives in the frontend, which is both
+faster (fully prerendered, no request waterfall) and better for SEO. Keeping a
+parallel unused API meant maintaining the same content in two places, where it
+had already drifted. Those endpoints have been removed rather than left as
+dead code.
+
+The backend's remaining purpose is receiving contact form submissions. Blog
+content is now sourced from `frontend/lib/blog-posts.ts`, which feeds the blog
+list, the `/blog/[slug]` pages, and `sitemap.xml`.
+
+If an API-driven CMS is wanted later (see §8.1), it should be designed against
+real requirements rather than restored from this spec.
+
 ### 4.2 Data Models
+
+> The Profile and Experience shapes below described the removed read endpoints.
+> They are retained as a description of the site's *content structure*, which
+> now lives in the frontend components, not as API contracts.
 
 #### Profile
 ```json
@@ -341,3 +356,4 @@ A modern, responsive career portfolio website that showcases professional experi
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-24 | Shubham Khanapure | Initial PRD creation |
+| 1.1 | 2026-08-30 | Shubham Khanapure | Reduced API surface to the contact endpoint; content is statically rendered from the frontend. Storage moved from JSON files to Supabase PostgreSQL with Alembic migrations. |

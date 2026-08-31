@@ -3,7 +3,7 @@
 These tests verify the model's helper methods without requiring a live
 database connection.
 """
-import pytest
+
 from datetime import datetime, timezone
 
 
@@ -20,17 +20,13 @@ class TestContactMessageModel:
             email="alice@example.com",
             subject="Hello",
             message="Hi there!",
-            read=False,
             ip_address="1.2.3.4",
             user_agent="pytest/1.0",
         )
-        # Manually set server-default fields (they'd normally be set by the DB)
-        msg.timestamp = overrides.get("timestamp", now)
         msg.created_at = overrides.get("created_at", now)
-        msg.updated_at = overrides.get("updated_at", now)
 
         for key, value in overrides.items():
-            if key not in ("timestamp", "created_at", "updated_at"):
+            if key != "created_at":
                 setattr(msg, key, value)
 
         return msg
@@ -64,37 +60,18 @@ class TestContactMessageModel:
         msg = self._make_message()
         assert msg.to_dict()["message"] == "Hi there!"
 
-    def test_to_dict_timestamp_is_iso_string(self):
-        """Datetime fields must be serialised to ISO-format strings."""
-        msg = self._make_message()
-        result = msg.to_dict()
-        assert isinstance(result["timestamp"], str)
-        # Should be parseable back to datetime
-        dt = datetime.fromisoformat(result["timestamp"])
-        assert isinstance(dt, datetime)
-
     def test_to_dict_created_at_is_iso_string(self):
         msg = self._make_message()
         result = msg.to_dict()
         assert isinstance(result["created_at"], str)
+        dt = datetime.fromisoformat(result["created_at"])
+        assert isinstance(dt, datetime)
 
-    def test_to_dict_updated_at_is_iso_string(self):
-        msg = self._make_message()
+    def test_to_dict_created_at_none_when_not_set(self):
+        """If created_at is None (e.g., not yet persisted), to_dict should return None."""
+        msg = self._make_message(created_at=None)
         result = msg.to_dict()
-        assert isinstance(result["updated_at"], str)
-
-    def test_to_dict_timestamp_none_when_not_set(self):
-        """If timestamp is None (e.g., not yet persisted), to_dict should return None."""
-        msg = self._make_message(timestamp=None, created_at=None, updated_at=None)
-        result = msg.to_dict()
-        assert result["timestamp"] is None
         assert result["created_at"] is None
-        assert result["updated_at"] is None
-
-    def test_to_dict_contains_read_flag(self):
-        msg = self._make_message()
-        assert "read" in msg.to_dict()
-        assert msg.to_dict()["read"] is False
 
     def test_to_dict_contains_ip_address(self):
         msg = self._make_message()

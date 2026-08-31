@@ -2,7 +2,7 @@ from logging.config import fileConfig
 import sys
 from pathlib import Path
 
-from sqlalchemy import engine_from_config, create_engine
+from sqlalchemy import create_engine
 from sqlalchemy import pool
 
 from alembic import context
@@ -13,7 +13,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Import settings and models
 from app.config import settings
 from app.database.connection import Base
-from app.database.models import ContactMessage  # Import all models here
+from app.database.models import (
+    ContactMessage,
+)  # noqa: F401 -- registers model with Base.metadata
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -88,10 +90,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

@@ -1,6 +1,5 @@
 from pydantic_settings import BaseSettings
 from typing import List
-import os
 
 
 class Settings(BaseSettings):
@@ -11,16 +10,22 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0"
     debug: bool = False
 
-    # Security
-    secret_key: str = "dev-secret-key-change-in-production"
+    # CORS
     allowed_origins: List[str] = [
         "http://localhost:3000",
-        "https://*.vercel.app",
     ]
+    # Starlette's CORSMiddleware does not glob-match "https://*.vercel.app" in
+    # allow_origins, so preview/prod subdomains are matched via this regex instead.
+    cors_allow_origin_regex: str = r"https://.*\.vercel\.app"
+    cors_allow_credentials: bool = True
+    cors_allow_methods: List[str] = ["GET", "POST", "OPTIONS"]
+    cors_allow_headers: List[str] = ["*"]
 
-    # Database
+    # Database (Supabase PostgreSQL, pooler endpoint recommended for serverless)
     database_url: str = ""
-    database_pool_size: int = 3  # Small pool for serverless
+    database_pool_size: int = (
+        1  # one pool per lambda instance; PgBouncer absorbs fan-out
+    )
     database_max_overflow: int = 0
     database_pool_recycle: int = 3600  # 1 hour
     database_pool_pre_ping: bool = True
@@ -29,14 +34,6 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_times: int = 5  # 5 submissions
     rate_limit_seconds: int = 3600  # per hour
-
-    # CORS
-    cors_allow_credentials: bool = True
-    cors_allow_methods: List[str] = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-    cors_allow_headers: List[str] = ["*"]
-
-    # Feature Flags
-    use_json_storage: bool = False  # Fallback to JSON if database is unavailable
 
     # Email Service (Resend)
     resend_api_key: str = ""
