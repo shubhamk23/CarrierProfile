@@ -10,8 +10,12 @@ on:
 
 jobs:
   smoke:
-    # For deployment_status events, only run when the deploy succeeded.
-    if: github.event_name != 'deployment_status' || github.event.deployment_status.state == 'success'
+    # For deployment_status events, only run for a successful *production* deploy;
+    # preview deploys would otherwise be judged against the production URLs.
+    if: >-
+      github.event_name != 'deployment_status' ||
+      (github.event.deployment_status.state == 'success' &&
+       startsWith(github.event.deployment.environment, 'Production'))
     runs-on: ubuntu-latest
     env:
       FRONTEND_URL: ${{ vars.FRONTEND_URL || 'https://carrier-profile.vercel.app' }}
@@ -43,4 +47,8 @@ jobs:
 
       - name: Frontend reaches the backend through the rewrite
         run: |
-          curl -fsS "$FRONTEND_URL/api/health" | grep -q '"status":"healthy"'
+          # The contact form posts through this proxy, so print what came back.
+          code=$(curl -s -o /tmp/body -w '%{http_code}' "$FRONTEND_URL/api/health")
+          echo "GET $FRONTEND_URL/api/health -> $code"
+          head -c 400 /tmp/body; echo
+          grep -q '"status":"healthy"' /tmp/body
