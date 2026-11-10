@@ -82,8 +82,8 @@ export default function Hero() {
             <span className="text-sm">GitHub</span>
           </a>
           <a
-            href={process.env.NEXT_PUBLIC_RESUME_URL || "/resume.pdf"}
-            download
+            href="/resume.pdf"
+            download="Shubham_Khanapure_Resume.pdf"
             className="btn-primary flex items-center gap-2"
           >
             <Download className="w-4 h-4" />

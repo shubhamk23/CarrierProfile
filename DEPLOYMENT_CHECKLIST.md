@@ -47,7 +47,7 @@ All code changes and configurations have been implemented according to the deplo
   - Error handling and logging
 
 ### Phase 3: Frontend Updates
-- ✅ `Hero.tsx` updated to use `process.env.NEXT_PUBLIC_RESUME_URL`
+- ✅ `Hero.tsx` links the resume to `/resume.pdf` (served from `frontend/public/`)
 - ✅ `next.config.js` updated with:
   - Security headers (CSP, HSTS, etc.)
   - Image domains for Supabase
@@ -102,7 +102,7 @@ All code changes and configurations have been implemented according to the deplo
 - `backend/app/config.py` (added Resend settings)
 - `backend/app/main.py` (fixed CORS)
 - `backend/app/routers/contact.py` (complete rewrite)
-- `frontend/components/Hero.tsx` (dynamic resume URL)
+- `frontend/components/Hero.tsx` (resume link)
 - `frontend/next.config.js` (security headers, images)
 - `frontend/app/layout.tsx` (metadataBase)
 - `README.md` (comprehensive update)
@@ -244,7 +244,6 @@ After deployment:
 2. Add these variables:
    - `NEXT_PUBLIC_API_URL` = [Backend URL from Step 6]
    - `NEXT_PUBLIC_BASE_URL` = [Frontend Vercel URL you just got]
-   - `NEXT_PUBLIC_RESUME_URL` = [Supabase Storage URL from Step 2]
 
 3. Redeploy: `vercel --prod`
 4. Copy production URL (e.g., `https://carrier-profile.vercel.app`)

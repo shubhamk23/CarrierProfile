@@ -199,7 +199,6 @@ Edit `frontend/.env.local`:
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000
 NEXT_PUBLIC_BASE_URL=http://localhost:3000
-NEXT_PUBLIC_RESUME_URL=/resume.pdf
 ```
 
 Start the frontend:
@@ -244,7 +243,6 @@ discarding a visitor's message.
 |----------|-------------|----------|---------|---------|
 | `NEXT_PUBLIC_API_URL` | Backend API URL | Yes | - | `https://your-api.vercel.app` |
 | `NEXT_PUBLIC_BASE_URL` | Frontend base URL | Yes | - | `https://yoursite.vercel.app` |
-| `NEXT_PUBLIC_RESUME_URL` | Resume PDF URL | No | `/resume.pdf` | Supabase Storage URL |
 
 ## API Endpoints
 
@@ -345,7 +343,6 @@ vercel --prod
 Configure environment variables in Vercel Dashboard:
 - `NEXT_PUBLIC_API_URL` = Backend URL from Step 4
 - `NEXT_PUBLIC_BASE_URL` = Frontend Vercel URL
-- `NEXT_PUBLIC_RESUME_URL` = Supabase resume URL from Step 1
 
 Redeploy: `vercel --prod`
 
@@ -591,7 +588,7 @@ Edit `backend/app/routers/blog.py` to add new blog posts
 
 ### Change Resume
 
-Replace `frontend/public/resume.pdf` or upload to Supabase Storage
+Replace `frontend/public/resume.pdf` and redeploy. The Download Resume button links to `/resume.pdf` on the site itself, so it does not depend on any external storage.
 
 ## Monitoring (Future Enhancement)
 
