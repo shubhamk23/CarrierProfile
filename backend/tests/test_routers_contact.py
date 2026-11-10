@@ -293,3 +293,46 @@ class TestAdminEndpointRemoved:
         routable under any method."""
         response = client.get("/api/contact/messages")
         assert response.status_code == 404
+
+
+class TestRegressions:
+    """One test per bug fixed in the API-surface cleanup (PR #4) or the
+    rate-limit hardening, named so a future failure points at the history."""
+
+    def test_regression_handler_commits_exactly_once(self, app_with_db_override):
+        """get_db used to commit as well, so a recovered request 500'd."""
+        db = _make_async_db()
+        app = app_with_db_override(db)
+        with TestClient(app, raise_server_exceptions=True) as c:
+            assert c.post("/api/contact", json=VALID_PAYLOAD).status_code == 200
+        db.commit.assert_awaited_once()
+
+    def test_regression_rate_limit_response_is_json(self, app_with_db_override):
+        """The frontend reads the body of a 429, so it must be JSON, not HTML."""
+        app = app_with_db_override(_make_async_db())
+        with TestClient(app, raise_server_exceptions=True) as c:
+            for _ in range(5):
+                c.post("/api/contact", json=VALID_PAYLOAD)
+            blocked = c.post("/api/contact", json=VALID_PAYLOAD)
+        assert blocked.status_code == 429
+        assert blocked.headers["content-type"].startswith("application/json")
+        assert blocked.json()
+
+    def test_regression_spoofed_forwarded_for_cannot_bypass_limit(
+        self, app_with_db_override
+    ):
+        """Rotating X-Forwarded-For used to give a fresh bucket per request."""
+        app = app_with_db_override(_make_async_db())
+        with TestClient(app, raise_server_exceptions=True) as c:
+            codes = [
+                c.post(
+                    "/api/contact",
+                    json=VALID_PAYLOAD,
+                    headers={
+                        "x-real-ip": "198.51.100.9",
+                        "X-Forwarded-For": f"10.0.0.{i}",
+                    },
+                ).status_code
+                for i in range(6)
+            ]
+        assert codes == [200, 200, 200, 200, 200, 429]
