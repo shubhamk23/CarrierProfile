@@ -41,6 +41,13 @@ jobs:
             [ "$code" = "200" ] || exit 1
           done
 
+      - name: Resume download serves a PDF
+        run: |
+          code=$(curl -s -o /tmp/resume.pdf -w '%{http_code} %{content_type}' "$FRONTEND_URL/resume.pdf")
+          echo "GET /resume.pdf -> $code"
+          [ "$code" = "200 application/pdf" ]
+          head -c 5 /tmp/resume.pdf | grep -q '%PDF-'
+
       - name: Blog post has its own title
         run: |
           curl -fsS "$FRONTEND_URL/blog/building-production-rag-systems" | grep -qi '<title>[^<]*RAG'
