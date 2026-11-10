@@ -3,7 +3,7 @@
  *
  * Behaviours tested:
  * - Renders the SK logo link
- * - Renders all six nav items in the desktop menu
+ * - Renders all seven nav items in the desktop menu
  * - Mobile menu is hidden by default
  * - Hamburger button toggles the mobile menu open / closed
  * - Clicking a mobile nav link closes the menu
@@ -24,7 +24,7 @@ jest.mock('lucide-react', () => ({
 
 import Navigation from '../../components/Navigation'
 
-const NAV_ITEMS = ['About', 'Experience', 'Skills', 'Projects', 'Achievements', 'Contact']
+const NAV_ITEMS = ['About', 'Experience', 'Skills', 'Projects', 'Achievements', 'Blog', 'Contact']
 
 describe('Navigation — static render', () => {
   it('renders the SK logo', () => {
@@ -32,7 +32,7 @@ describe('Navigation — static render', () => {
     expect(screen.getByText('SK')).toBeInTheDocument()
   })
 
-  it('renders all six nav items in the desktop nav', () => {
+  it('renders all seven nav items in the desktop nav', () => {
     render(<Navigation />)
     for (const item of NAV_ITEMS) {
       // Multiple elements may be rendered (desktop + mobile), getAllByText is fine
@@ -123,5 +123,13 @@ describe('Navigation — scroll behaviour', () => {
     })
 
     expect(nav.className).not.toContain('backdrop-blur-md')
+  })
+})
+
+describe('Navigation — blog link (regression)', () => {
+  it('links to the #blog section', () => {
+    render(<Navigation />)
+    const links = screen.getAllByRole('link', { name: 'Blog' })
+    expect(links[0]).toHaveAttribute('href', '#blog')
   })
 })
