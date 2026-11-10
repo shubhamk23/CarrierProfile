@@ -52,8 +52,12 @@ const nextConfig = {
     return [
       {
         source: '/api/:path*',
+        // Strip trailing slashes: a value like "https://api.example.com/" would
+        // make the destination "https://api.example.com//api/..." and the
+        // backend answers a double slash with a relative 308 redirect that
+        // loops straight back to this site.
         destination: process.env.NEXT_PUBLIC_API_URL
-          ? `${process.env.NEXT_PUBLIC_API_URL}/api/:path*`
+          ? `${process.env.NEXT_PUBLIC_API_URL.trim().replace(/\/+$/, '')}/api/:path*`
           : 'http://localhost:8000/api/:path*',
       },
     ]

@@ -66,5 +66,12 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/carrierprofile_ci
 
-      - name: Run tests with coverage
-        run: pytest tests/ -v --cov=app --cov-report=term-missing --cov-fail-under=80
+      # Unit tests run WITHOUT DATABASE_URL: several assert the "database not
+      # configured" behaviour, and settings are read once at import time.
+      - name: Run unit tests with coverage
+        run: pytest tests/ -v -m "not integration" --cov=app --cov-report=term-missing --cov-fail-under=80
+
+      - name: Run integration tests against Postgres
+        run: pytest tests/integration -v -m integration
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/carrierprofile_ci

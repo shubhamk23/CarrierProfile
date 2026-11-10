@@ -1,0 +1,61 @@
+name: Production smoke test
+
+# Read-only checks against the deployed sites. Never submits the contact form.
+# Set repository variables FRONTEND_URL and BACKEND_URL to override the defaults.
+on:
+  deployment_status:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    # For deployment_status events, only run for a successful *production* deploy;
+    # preview deploys would otherwise be judged against the production URLs.
+    if: >-
+      github.event_name != 'deployment_status' ||
+      (github.event.deployment_status.state == 'success' &&
+       startsWith(github.event.deployment.environment, 'Production'))
+    runs-on: ubuntu-latest
+    env:
+      FRONTEND_URL: ${{ vars.FRONTEND_URL || 'https://carrier-profile.vercel.app' }}
+      BACKEND_URL: ${{ vars.BACKEND_URL || 'https://carrier-profile-api.vercel.app' }}
+    steps:
+      - name: Backend health
+        run: |
+          body=$(curl -fsS --retry 3 --retry-delay 5 "$BACKEND_URL/api/health")
+          echo "$body"
+          echo "$body" | grep -q '"status":"healthy"'
+
+      - name: Removed admin endpoint stays gone
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$BACKEND_URL/api/contact/messages")
+          echo "GET /api/contact/messages -> $code"
+          [ "$code" = "404" ] || [ "$code" = "405" ]
+
+      - name: Frontend pages respond
+        run: |
+          for path in / /blog/building-production-rag-systems /sitemap.xml /robots.txt; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --retry 3 --retry-delay 5 "$FRONTEND_URL$path")
+            echo "$path -> $code"
+            [ "$code" = "200" ] || exit 1
+          done
+
+      - name: Resume download serves a PDF
+        run: |
+          code=$(curl -s -o /tmp/resume.pdf -w '%{http_code} %{content_type}' "$FRONTEND_URL/resume.pdf")
+          echo "GET /resume.pdf -> $code"
+          [ "$code" = "200 application/pdf" ]
+          head -c 5 /tmp/resume.pdf | grep -q '%PDF-'
+
+      - name: Blog post has its own title
+        run: |
+          curl -fsS "$FRONTEND_URL/blog/building-production-rag-systems" | grep -qi '<title>[^<]*RAG'
+
+      - name: Frontend reaches the backend through the rewrite
+        run: |
+          # The contact form posts through this proxy, so print what came back.
+          code=$(curl -s -o /tmp/body -w '%{http_code}' "$FRONTEND_URL/api/health")
+          echo "GET $FRONTEND_URL/api/health -> $code"
+          head -c 400 /tmp/body; echo
+          grep -q '"status":"healthy"' /tmp/body

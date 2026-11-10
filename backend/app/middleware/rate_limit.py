@@ -8,16 +8,22 @@ from app.config import settings
 def get_client_identifier(request: Request) -> str:
     """
     Get client identifier for rate limiting.
-    Uses X-Forwarded-For header if available (Vercel provides this),
-    otherwise falls back to direct IP address.
+
+    Prefers headers that Vercel's edge sets itself and overwrites on every
+    request (x-vercel-forwarded-for, then x-real-ip). A client can put any
+    value it likes in X-Forwarded-For, so that header is only a fallback for
+    non-Vercel environments, and the direct connection IP is the last resort.
     """
-    # Vercel sets X-Forwarded-For header with the real client IP
+    for header in ("x-vercel-forwarded-for", "x-real-ip"):
+        value = request.headers.get(header)
+        if value:
+            return value.split(",")[0].strip()
+
     forwarded_for = request.headers.get("X-Forwarded-For")
     if forwarded_for:
         # X-Forwarded-For can contain multiple IPs, use the first one (client IP)
         return forwarded_for.split(",")[0].strip()
 
-    # Fallback to direct connection IP
     return get_remote_address(request)
 
 

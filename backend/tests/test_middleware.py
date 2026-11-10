@@ -4,15 +4,20 @@ get_client_identifier() is a pure function that reads request headers, so
 we can test it without starting the full FastAPI app.
 """
 
+from typing import Optional
 from unittest.mock import MagicMock
 
 from app.middleware.rate_limit import get_client_identifier
 
 
-def _make_request(x_forwarded_for: str | None = None, client_host: str = "1.1.1.1"):
+def _make_request(
+    x_forwarded_for: Optional[str] = None,
+    client_host: str = "1.1.1.1",
+    extra_headers: Optional[dict] = None,
+):
     """Build a minimal mock Request object."""
     request = MagicMock()
-    headers = {}
+    headers = dict(extra_headers or {})
     if x_forwarded_for is not None:
         headers["X-Forwarded-For"] = x_forwarded_for
     request.headers = headers
@@ -49,3 +54,26 @@ class TestGetClientIdentifier:
         ipv6 = "2001:db8::1"
         request = _make_request(x_forwarded_for=ipv6)
         assert get_client_identifier(request) == ipv6
+
+
+class TestSpoofResistance:
+    """The client controls X-Forwarded-For, so Vercel's own headers win."""
+
+    def test_vercel_header_beats_spoofed_x_forwarded_for(self):
+        request = _make_request(
+            x_forwarded_for="6.6.6.6",
+            extra_headers={"x-vercel-forwarded-for": "9.9.9.9"},
+        )
+        assert get_client_identifier(request) == "9.9.9.9"
+
+    def test_real_ip_beats_spoofed_x_forwarded_for(self):
+        request = _make_request(
+            x_forwarded_for="6.6.6.6", extra_headers={"x-real-ip": "8.8.8.8"}
+        )
+        assert get_client_identifier(request) == "8.8.8.8"
+
+    def test_vercel_header_beats_real_ip(self):
+        request = _make_request(
+            extra_headers={"x-vercel-forwarded-for": "9.9.9.9", "x-real-ip": "8.8.8.8"}
+        )
+        assert get_client_identifier(request) == "9.9.9.9"
