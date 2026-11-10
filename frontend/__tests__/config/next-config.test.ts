@@ -43,4 +43,15 @@ describe('next.config.js', () => {
     delete process.env.NEXT_PUBLIC_API_URL
     expect(load).not.toThrow()
   })
+
+  it.each([
+    ['https://api.example.com/', 'https://api.example.com/api/:path*'],
+    ['https://api.example.com///', 'https://api.example.com/api/:path*'],
+    ['  https://api.example.com  ', 'https://api.example.com/api/:path*'],
+  ])('tolerates a sloppy NEXT_PUBLIC_API_URL %j', async (value, expected) => {
+    ;(process.env as Record<string, string>).NODE_ENV = 'production'
+    process.env.NEXT_PUBLIC_API_URL = value
+    const rewrites = await load().rewrites()
+    expect(rewrites[0].destination).toBe(expected)
+  })
 })
